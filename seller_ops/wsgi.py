@@ -14,3 +14,13 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'seller_ops.settings')
 
 application = get_wsgi_application()
+
+
+# ---- Vercel ----
+# Vercel looks for a WSGI callable named `app`. Its filesystem is ephemeral, so
+# make sure the database tables exist when a fresh instance starts.
+app = application
+
+if os.environ.get('VERCEL'):
+    from django.core.management import call_command
+    call_command('migrate', interactive=False, verbosity=0)
