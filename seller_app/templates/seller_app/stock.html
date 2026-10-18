@@ -1,0 +1,30 @@
+{% extends 'seller_app/base.html' %}
+{% block title %}Stock | Seller Ops{% endblock %}
+{% block header %}Inventory{% endblock %}
+
+{% block content %}
+<form action="{% url 'add_product' %}" method="POST" class="card p-4 space-y-3">
+    {% csrf_token %}
+    <h3 class="text-sm font-bold text-stone-700">Add a product</h3>
+    <input type="text" name="name" placeholder="Product name (e.g. Phone case)" required maxlength="100" class="input">
+    <div class="flex gap-3">
+        <input type="number" name="price" placeholder="Price (₦)" required min="0" step="0.01" inputmode="decimal" class="input w-1/2">
+        <input type="number" name="stock" placeholder="Stock" required min="0" value="0" inputmode="numeric" class="input w-1/2">
+    </div>
+    <button type="submit" class="btn">Add to inventory</button>
+</form>
+
+<div class="card overflow-hidden">
+    <div class="px-4 py-3 bg-stone-50 border-b border-stone-100 flex justify-between items-center">
+        <h3 class="text-sm font-bold text-stone-700">Current stock</h3>
+        <span class="text-xs text-stone-500">{{ products|length }} item{{ products|length|pluralize }}</span>
+    </div>
+    <div class="divide-y divide-stone-100">
+        {% for product in products %}
+            {% include 'seller_app/partials/product_row.html' %}
+        {% empty %}
+            <div class="p-8 text-center text-stone-500 text-sm">No products yet. Add your first item above.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

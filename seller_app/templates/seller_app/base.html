@@ -1,0 +1,114 @@
+{% load humanize static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{% block title %}Seller Ops{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: {
+                fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] },
+                colors: {
+                    brand: { 50:'#ecfdf3', 100:'#d1fae0', 200:'#a7f0c4', 500:'#16a34a', 600:'#15803d', 700:'#166534', 800:'#14532d', 900:'#0f3d22' },
+                    cream: '#f7f5ef'
+                }
+            } }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer components {
+            .card   { @apply bg-white rounded-2xl border border-stone-200/70 shadow-sm; }
+            .label  { @apply block text-xs font-semibold text-stone-600 mb-1.5; }
+            .input  { @apply w-full px-4 py-3 rounded-xl border border-stone-300 bg-white text-sm outline-none transition focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500; }
+            .btn    { @apply w-full inline-flex justify-center items-center gap-2 bg-brand-600 hover:bg-brand-700 active:scale-[.98] text-white font-semibold text-sm py-3 px-4 rounded-xl shadow-sm transition; }
+            .btn-sm { @apply inline-flex items-center justify-center gap-1 text-xs font-semibold px-3 py-2 rounded-lg transition active:scale-95; }
+        }
+    </style>
+
+    <link rel="manifest" href="{% url 'manifest' %}">
+    <link rel="icon" type="image/png" href="{% static 'seller_app/icons/icon-192.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'seller_app/icons/apple-touch-icon.png' %}">
+    <meta name="theme-color" content="#15803d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Seller Ops">
+</head>
+
+<body class="bg-stone-300 text-stone-800 font-sans antialiased h-dvh flex justify-center">
+<div class="w-full max-w-md bg-cream h-full flex flex-col shadow-2xl overflow-hidden relative">
+
+    <header class="bg-brand-700 text-white px-4 py-3.5 flex justify-between items-center z-10"
+            style="padding-top: max(0.875rem, env(safe-area-inset-top))">
+        <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center font-extrabold text-sm shrink-0">₦</div>
+            <div class="min-w-0">
+                <h1 class="text-base font-bold leading-tight truncate">{% block header %}Dashboard{% endblock %}</h1>
+                {% if request.user.is_authenticated %}
+                <p class="text-[11px] text-brand-100 leading-tight truncate">{{ request.user.business_name|default:request.user.username|default:request.user.phone_number }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% if request.user.is_authenticated %}
+        <form method="POST" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="text-xs font-semibold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full transition">Log out</button>
+        </form>
+        {% endif %}
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-4 {% if request.user.is_authenticated %}pb-28{% else %}pb-8{% endif %} space-y-4">
+        {% if messages %}
+            {% for message in messages %}
+            <div class="rounded-xl px-4 py-3 text-sm font-medium border
+                {% if message.tags == 'error' %}bg-red-50 text-red-700 border-red-200{% else %}bg-brand-50 text-brand-800 border-brand-200{% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+
+    {% if request.user.is_authenticated %}
+    {% with url=request.resolver_match.url_name %}
+    <nav class="absolute bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-stone-200 grid grid-cols-4 items-end px-2 pt-2 z-10 text-[11px] font-semibold"
+         style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))">
+        <a href="{% url 'dashboard' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'dashboard' %}text-brand-700{% else %}text-stone-400{% endif %}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>Home
+        </a>
+        <a href="{% url 'stock' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'stock' %}text-brand-700{% else %}text-stone-400{% endif %}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>Stock
+        </a>
+        <a href="{% url 'add_sale' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'add_sale' %}text-brand-700{% else %}text-stone-400{% endif %}">
+            <span class="-mt-7 w-12 h-12 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg ring-4 ring-cream">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            </span>Sell
+        </a>
+        <a href="{% url 'debts' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'debts' %}text-brand-700{% else %}text-stone-400{% endif %}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.4-1.9M17 20H7m10 0v-2c0-.7-.1-1.3-.4-1.9M7 20H2v-2a3 3 0 015.4-1.9M7 20v-2c0-.7.1-1.3.4-1.9m0 0a5 5 0 019.3 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Debts
+        </a>
+    </nav>
+    {% endwith %}
+    {% endif %}
+</div>
+
+<script>
+    // Send Django's CSRF token with every HTMX request
+    document.body.addEventListener('htmx:configRequest', (event) => {
+        const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+        if (match) event.detail.headers['X-CSRFToken'] = match[1];
+    });
+</script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => navigator.serviceWorker.register('{% url "service_worker" %}', { scope: '/' }).catch(() => {}));
+    }
+</script>
+</body>
+</html>
