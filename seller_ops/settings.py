@@ -10,10 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
-
 import os
-from urllib.parse import urlparse
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,12 +22,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-zaz+m0sc!vsqytw9mhafx9v&l2zbe!+u*&_z#ktqcf@5v#8ubx'
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-zaz+m0sc!vsqytw9mhafx9v&l2zbe!+u*&_z#ktqcf@5v#8ubx',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+ON_VERCEL = bool(os.environ.get('VERCEL'))
+DEBUG = os.environ.get('DJANGO_DEBUG', '0' if ON_VERCEL else '1') == '1'
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.ngrok-free.app', '.vercel.app']
+CSRF_TRUSTED_ORIGINS = ['https://*.vercel.app', 'https://*.ngrok-free.app']
+if ON_VERCEL:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Application definition
@@ -46,6 +54,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -80,26 +89,31 @@ LOGIN_REDIRECT_URL = 'dashboard'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    parsed_db_url = urlparse(database_url)
+# Vercel's filesystem is read-only except /tmp, so the demo's SQLite file lives there
+# and is wiped on cold starts. Set DATABASE_URL (e.g. Neon Postgres) for persistent data.
+DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL')
+if DATABASE_URL:
+    _u = urlparse(DATABASE_URL)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': parsed_db_url.path.lstrip('/'),
-            'USER': parsed_db_url.username,
-            'PASSWORD': parsed_db_url.password,
-            'HOST': parsed_db_url.hostname,
-            'PORT': parsed_db_url.port or '5432',
+            'NAME': _u.path.lstrip('/'),
+            'USER': _u.username,
+            'PASSWORD': _u.password,
+            'HOST': _u.hostname,
+            'PORT': _u.port or 5432,
+            'OPTIONS': {'sslmode': 'require'},
+            'CONN_MAX_AGE': 0,
         }
     }
 else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3', # Keep this for local development
+            'NAME': '/tmp/db.sqlite3' if ON_VERCEL else BASE_DIR / 'db.sqlite3',
         }
     }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
@@ -135,6 +149,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-# Static files configuration
-STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles_build', 'static')
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+WHITENOISE_USE_FINDERS = True  # serve app/admin static files directly, no collectstatic step
+
