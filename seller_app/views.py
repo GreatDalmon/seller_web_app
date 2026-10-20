@@ -8,7 +8,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import DecimalField, F, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -28,6 +29,10 @@ def normalize_phone(raw):
     elif phone.startswith('234') and len(phone) == 13:
         phone = '0' + phone[3:]
     return phone
+
+
+def valid_phone(phone):
+    return bool(re.fullmatch(r'0\d{10}', phone or ''))
 
 
 def to_decimal(raw, default=None):
@@ -85,6 +90,7 @@ def register_view(request):
             'phone_number': normalize_phone(request.POST.get('phone_number')),
         }
         password = request.POST.get('password', '')
+        confirm = request.POST.get('confirm_password', '')
         phone = form['phone_number']
 
         error = None
@@ -94,6 +100,8 @@ def register_view(request):
             error = 'Enter a valid 11-digit Nigerian phone number, e.g. 08012345678.'
         elif Seller.objects.filter(phone_number=phone).exists():
             error = 'This phone number is already registered.'
+        elif password != confirm:
+            error = 'Passwords do not match. Please re-enter them.'
         else:
             try:
                 validate_password(password)
@@ -183,6 +191,17 @@ def update_stock(request, pk):
 
 
 # ---------- sales ----------
+def _sale_form_context(request, products, form=None, rows=None):
+    customers = list(Customer.objects.filter(seller=request.user)
+                     .order_by('name').values('name', 'phone_number')[:500])
+    return {
+        'products': products,
+        'customers': customers,
+        'form': form or {},
+        'rows': rows or [{'product_id': '', 'quantity': 1}],
+    }
+
+
 @login_required
 def add_sale(request):
     products = Product.objects.filter(seller=request.user, stock__gt=0).order_by('name')
@@ -190,56 +209,147 @@ def add_sale(request):
     if request.method == 'POST':
         customer_name = request.POST.get('customer_name', '').strip()[:100]
         customer_phone = normalize_phone(request.POST.get('customer_phone'))[:15]
-        quantity = to_int(request.POST.get('quantity'), 0)
         amount_paid = to_decimal(request.POST.get('amount_paid') or '0')
 
+        # One (product, quantity) pair per item row the seller added
+        raw_ids = request.POST.getlist('product_id')
+        raw_qtys = request.POST.getlist('quantity')
+        rows = [{'product_id': pid, 'quantity': qty} for pid, qty in zip(raw_ids, raw_qtys)]
+        form = {'customer_name': customer_name, 'customer_phone': customer_phone,
+                'amount_paid': request.POST.get('amount_paid', '')}
+
         error = None
-        if not customer_name:
-            error = 'Enter the customer name.'
-        elif quantity < 1:
-            error = 'Quantity must be at least 1.'
-        elif amount_paid is None:
-            error = 'Enter a valid amount paid.'
+        wanted = {}  # product id -> total quantity (same product on two rows is merged)
+        for row in rows:
+            pid = to_int(row['product_id'], 0)
+            if pid <= 0:
+                continue
+            qty = to_int(row['quantity'], 0)
+            if qty < 1:
+                error = 'Every item needs a quantity of at least 1.'
+                break
+            wanted[pid] = wanted.get(pid, 0) + qty
+
+        if not error:
+            if not customer_name:
+                error = 'Enter the customer name.'
+            elif customer_phone and not valid_phone(customer_phone):
+                error = 'Enter a valid 11-digit phone number, e.g. 08012345678.'
+            elif not wanted:
+                error = 'Choose at least one product.'
+            elif amount_paid is None:
+                error = 'Enter a valid amount paid.'
 
         if not error:
             with transaction.atomic():
-                product = get_object_or_404(
-                    Product.objects.select_for_update(),
-                    id=to_int(request.POST.get('product_id'), 0), seller=request.user)
-                total = product.price * quantity
-
-                if product.stock < quantity:
-                    error = f'Not enough stock! Only {product.stock} left.'
-                elif amount_paid > total:
-                    error = f'Amount paid is more than the total (₦{total:,.2f}).'
+                locked = {p.id: p for p in Product.objects.select_for_update()
+                          .filter(seller=request.user, id__in=wanted).order_by('id')}
+                if len(locked) != len(wanted):
+                    error = 'One of the chosen products could not be found.'
                 else:
+                    short = [p for p in locked.values() if p.stock < wanted[p.id]]
+                    total = sum((p.price * wanted[p.id] for p in locked.values()), ZERO)
+                    if short:
+                        p = short[0]
+                        error = f'Not enough stock for {p.name}! Only {p.stock} left.'
+                    elif amount_paid > total:
+                        error = f'Amount paid is more than the total (₦{total:,.2f}).'
+
+                if not error:
                     customer = Customer.objects.filter(
                         seller=request.user, name__iexact=customer_name).first()
                     if customer is None:
                         customer = Customer.objects.create(
                             seller=request.user, name=customer_name, phone_number=customer_phone)
-                    elif customer_phone and not customer.phone_number:
+                    elif customer_phone and customer.phone_number != customer_phone:
                         customer.phone_number = customer_phone
                         customer.save(update_fields=['phone_number'])
 
                     sale = Sale.objects.create(
                         seller=request.user, customer=customer,
                         total_amount=total, amount_paid=amount_paid)
-                    # SaleItem.save() deducts the stock
-                    SaleItem.objects.create(
-                        sale=sale, product=product, quantity=quantity, price_at_sale=product.price)
+                    for pid, qty in wanted.items():
+                        product = locked[pid]
+                        # SaleItem.save() deducts the stock
+                        SaleItem.objects.create(
+                            sale=sale, product=product, quantity=qty, price_at_sale=product.price)
 
+                    count = len(wanted)
                     owing = total - amount_paid
+                    summary = f'Sale of {count} item{"s" if count != 1 else ""} recorded.'
                     if owing > 0:
                         messages.success(
-                            request, f'Sale recorded. {customer.name} still owes ₦{owing:,.2f}.')
+                            request, f'{summary} {customer.name} still owes ₦{owing:,.2f}.')
                     else:
-                        messages.success(request, f'Sale recorded. {customer.name} paid in full.')
+                        messages.success(request, f'{summary} {customer.name} paid in full.')
                     return redirect('dashboard')
 
         messages.error(request, error)
+        return render(request, 'seller_app/add_sale.html',
+                      _sale_form_context(request, products, form, rows))
 
-    return render(request, 'seller_app/add_sale.html', {'products': products})
+    return render(request, 'seller_app/add_sale.html', _sale_form_context(request, products))
+
+
+# ---------- customers (everyone you sell to, not only debtors) ----------
+OWED = Coalesce(
+    Sum(F('sales__total_amount') - F('sales__amount_paid')),
+    Value(ZERO),
+    output_field=DecimalField(max_digits=12, decimal_places=2),
+)
+
+
+@login_required
+def customers_list(request):
+    q = request.GET.get('q', '').strip()
+    qs = Customer.objects.filter(seller=request.user).annotate(owed=OWED).order_by('name')
+    if q:
+        qs = qs.filter(Q(name__icontains=q) | Q(phone_number__icontains=q))
+    people = list(qs)
+    for c in people:
+        c.wa_link = whatsapp_link(c.phone_number, f"Hello {c.name}, ")
+    return render(request, 'seller_app/customers.html', {'people': people, 'q': q})
+
+
+@login_required
+@require_POST
+def add_customer(request):
+    name = request.POST.get('name', '').strip()[:100]
+    phone = normalize_phone(request.POST.get('phone_number'))[:15]
+
+    if not name:
+        messages.error(request, 'Enter the customer name.')
+    elif not valid_phone(phone):
+        messages.error(request, 'Enter a valid 11-digit phone number, e.g. 08012345678.')
+    else:
+        customer = Customer.objects.filter(seller=request.user, name__iexact=name).first()
+        if customer is None:
+            Customer.objects.create(seller=request.user, name=name, phone_number=phone)
+            messages.success(request, f'{name} saved to your contacts.')
+        else:
+            customer.phone_number = phone
+            customer.save(update_fields=['phone_number'])
+            messages.success(request, f'Updated the phone number for {customer.name}.')
+    return redirect('customers')
+
+
+@login_required
+@require_POST
+def update_customer(request, pk):
+    customer = get_object_or_404(Customer, pk=pk, seller=request.user)
+    name = request.POST.get('name', '').strip()[:100]
+    phone = normalize_phone(request.POST.get('phone_number'))[:15]
+
+    if not name:
+        messages.error(request, 'A customer needs a name.')
+    elif phone and not valid_phone(phone):
+        messages.error(request, 'Enter a valid 11-digit phone number, e.g. 08012345678.')
+    else:
+        customer.name = name
+        customer.phone_number = phone
+        customer.save(update_fields=['name', 'phone_number'])
+        messages.success(request, f'{customer.name} updated.')
+    return redirect('customers')
 
 
 # ---------- debts ----------
