@@ -6,72 +6,156 @@
 {% block content %}
 {% if not products %}
 <div class="card p-8 text-center">
-    <p class="text-sm font-semibold text-stone-700">No products in stock</p>
+    <p class="text-sm font-bold text-stone-700">No products in stock</p>
     <p class="text-xs text-stone-500 mt-1 mb-4">Add a product before recording a sale.</p>
     <a href="{% url 'stock' %}" class="btn">Go to stock</a>
 </div>
 {% else %}
-<form method="POST" action="{% url 'add_sale' %}" class="card p-5 space-y-4" id="sale-form">
+<form method="POST" action="{% url 'add_sale' %}" class="space-y-4" id="sale-form">
     {% csrf_token %}
-    <div>
-        <label class="label" for="customer_name">Customer name</label>
-        <input type="text" id="customer_name" name="customer_name" required maxlength="100" placeholder="e.g. Joy" class="input">
-    </div>
-    <div>
-        <label class="label" for="customer_phone">Customer phone <span class="font-normal text-stone-400">(for debt reminders)</span></label>
-        <input type="tel" id="customer_phone" name="customer_phone" inputmode="tel" placeholder="e.g. 08012345678" class="input">
-    </div>
-    <div>
-        <label class="label" for="product_id">Product</label>
-        <select id="product_id" name="product_id" required class="input">
-            <option value="" disabled selected>Choose from stock…</option>
-            {% for product in products %}
-            <option value="{{ product.id }}" data-price="{{ product.price|stringformat:'s' }}" data-stock="{{ product.stock }}">
-                {{ product.name }} ({{ product.stock }} left) – ₦{{ product.price|floatformat:2|intcomma }}
-            </option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="flex gap-4">
-        <div class="w-1/3">
-            <label class="label" for="quantity">Qty</label>
-            <input type="number" id="quantity" name="quantity" required min="1" value="1" inputmode="numeric" class="input">
-        </div>
-        <div class="w-2/3">
-            <label class="label" for="amount_paid">Amount paid (₦)</label>
-            <input type="number" id="amount_paid" name="amount_paid" min="0" step="0.01" inputmode="decimal" placeholder="0 if on credit" class="input">
-        </div>
-    </div>
 
-    <div class="rounded-xl bg-brand-50 border border-brand-100 px-4 py-3 flex justify-between items-center text-sm">
-        <span class="text-stone-600">Total</span>
-        <span class="font-extrabold text-brand-800" id="sale-total">₦0.00</span>
-    </div>
-    <button type="button" id="pay-full" class="btn-sm w-full bg-brand-50 text-brand-700 hover:bg-brand-100">Customer paid in full</button>
+    <section class="card p-4 space-y-4">
+        <div>
+            <label class="label" for="customer_name">Customer name</label>
+            <input type="text" id="customer_name" name="customer_name" required maxlength="100" list="customer-list"
+                   value="{{ form.customer_name }}" autocomplete="off" placeholder="e.g. Joy" class="input">
+            <datalist id="customer-list">
+                {% for c in customers %}<option value="{{ c.name }}" data-phone="{{ c.phone_number }}"></option>{% endfor %}
+            </datalist>
+        </div>
+        <div>
+            <label class="label" for="customer_phone">Phone <span class="normal-case font-normal text-stone-400">(saved to your contacts)</span></label>
+            <input type="tel" id="customer_phone" name="customer_phone" inputmode="tel" value="{{ form.customer_phone }}"
+                   placeholder="e.g. 08012345678" class="input">
+        </div>
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="px-4 py-3 border-b border-dashed border-stone-300 flex justify-between items-center">
+            <h3 class="text-sm font-extrabold text-brand-900">Items bought</h3>
+            <span class="text-xs text-stone-500 font-mono" id="item-count">1 item</span>
+        </div>
+        <div id="items" class="divide-y divide-dashed divide-stone-200"></div>
+        <div class="p-3 border-t border-dashed border-stone-300">
+            <button type="button" id="add-item" class="btn-sm w-full bg-brand-50 text-brand-700 hover:bg-brand-100 py-2.5">
+                + Add another item
+            </button>
+        </div>
+    </section>
+
+    <section class="card p-4 space-y-3">
+        <div class="flex justify-between items-baseline">
+            <span class="label !mb-0">Total</span>
+            <span class="money text-2xl font-medium text-brand-900" id="sale-total">₦0.00</span>
+        </div>
+        <div>
+            <label class="label" for="amount_paid">Amount paid (₦)</label>
+            <input type="number" id="amount_paid" name="amount_paid" min="0" step="0.01" inputmode="decimal"
+                   value="{{ form.amount_paid }}" placeholder="0 if on credit" class="input money">
+        </div>
+        <button type="button" id="pay-full" class="btn-sm w-full bg-amber-100 text-amber-900 hover:bg-amber-200 py-2.5">Customer paid in full</button>
+    </section>
 
     <button type="submit" class="btn">Record sale</button>
 </form>
 
+<template id="row-tpl">
+    <div class="p-4 space-y-3 item-row">
+        <div class="flex gap-2 items-start">
+            <div class="flex-1 min-w-0">
+                <label class="label">Product</label>
+                <select name="product_id" required class="input item-product">
+                    <option value="" disabled selected>Choose from stock…</option>
+                    {% for product in products %}
+                    <option value="{{ product.id }}" data-price="{{ product.price|stringformat:'s' }}" data-stock="{{ product.stock }}">
+                        {{ product.name }} ({{ product.stock }} left) – ₦{{ product.price|floatformat:2|intcomma }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="button" class="remove-item mt-6 w-10 h-11 shrink-0 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50" aria-label="Remove item">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+        </div>
+        <div class="flex gap-3 items-end">
+            <div class="w-1/3">
+                <label class="label">Qty</label>
+                <input type="number" name="quantity" required min="1" value="1" inputmode="numeric" class="input item-qty">
+            </div>
+            <div class="flex-1 text-right pb-3">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-stone-400">Subtotal</span>
+                <span class="money text-sm font-medium text-stone-700 ml-2 item-sub">₦0.00</span>
+            </div>
+        </div>
+    </div>
+</template>
+
+{{ rows|json_script:"initial-rows" }}
+
 <script>
 (function () {
-    const product = document.getElementById('product_id');
-    const qty = document.getElementById('quantity');
-    const paid = document.getElementById('amount_paid');
+    const list = document.getElementById('items');
+    const tpl = document.getElementById('row-tpl');
     const totalEl = document.getElementById('sale-total');
+    const countEl = document.getElementById('item-count');
+    const paid = document.getElementById('amount_paid');
+    const naira = (n) => '₦' + n.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-    function total() {
-        const opt = product.selectedOptions[0];
+    function rowTotal(row) {
+        const opt = row.querySelector('.item-product').selectedOptions[0];
+        const qty = row.querySelector('.item-qty');
         if (!opt || !opt.dataset.price) return 0;
-        const max = parseInt(opt.dataset.stock, 10);
-        qty.max = max;
+        qty.max = opt.dataset.stock;
         return parseFloat(opt.dataset.price) * (parseInt(qty.value, 10) || 0);
     }
+
     function update() {
-        totalEl.textContent = '₦' + total().toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const rows = list.querySelectorAll('.item-row');
+        let total = 0;
+        rows.forEach((row) => {
+            const sub = rowTotal(row);
+            row.querySelector('.item-sub').textContent = naira(sub);
+            total += sub;
+            row.querySelector('.remove-item').classList.toggle('invisible', rows.length === 1);
+        });
+        totalEl.textContent = naira(total);
+        countEl.textContent = rows.length + (rows.length === 1 ? ' item' : ' items');
+        return total;
     }
-    product.addEventListener('change', update);
-    qty.addEventListener('input', update);
-    document.getElementById('pay-full').addEventListener('click', () => { paid.value = total().toFixed(2); });
+
+    function addRow(productId, qty) {
+        const row = tpl.content.firstElementChild.cloneNode(true);
+        if (productId) row.querySelector('.item-product').value = String(productId);
+        row.querySelector('.item-qty').value = qty || 1;
+        list.appendChild(row);
+        update();
+        return row;
+    }
+
+    list.addEventListener('input', update);
+    list.addEventListener('change', update);
+    list.addEventListener('click', (e) => {
+        const btn = e.target.closest('.remove-item');
+        if (!btn) return;
+        if (list.children.length > 1) { btn.closest('.item-row').remove(); update(); }
+    });
+    document.getElementById('add-item').addEventListener('click', () => {
+        addRow().querySelector('.item-product').focus();
+    });
+    document.getElementById('pay-full').addEventListener('click', () => { paid.value = update().toFixed(2); });
+
+    // Autofill the phone of a returning customer
+    const nameInput = document.getElementById('customer_name');
+    const phoneInput = document.getElementById('customer_phone');
+    nameInput.addEventListener('input', () => {
+        const match = Array.from(document.querySelectorAll('#customer-list option'))
+            .find((o) => o.value.toLowerCase() === nameInput.value.trim().toLowerCase());
+        if (match && match.dataset.phone && !phoneInput.value) phoneInput.value = match.dataset.phone;
+    });
+
+    // Rebuild rows (also restores them if the server sent the form back with an error)
+    JSON.parse(document.getElementById('initial-rows').textContent)
+        .forEach((r) => addRow(r.product_id, r.quantity));
 })();
 </script>
 {% endif %}

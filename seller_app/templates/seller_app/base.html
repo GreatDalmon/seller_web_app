@@ -7,13 +7,16 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script>
         tailwind.config = {
             theme: { extend: {
-                fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] },
+                fontFamily: {
+                    sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                    mono: ['"DM Mono"', 'ui-monospace', 'monospace']
+                },
                 colors: {
                     brand: { 50:'#ecfdf3', 100:'#d1fae0', 200:'#a7f0c4', 500:'#16a34a', 600:'#15803d', 700:'#166534', 800:'#14532d', 900:'#0f3d22' },
                     cream: '#f7f5ef'
@@ -23,18 +26,28 @@
     </script>
     <style type="text/tailwindcss">
         @layer components {
-            .card   { @apply bg-white rounded-2xl border border-stone-200/70 shadow-sm; }
-            .label  { @apply block text-xs font-semibold text-stone-600 mb-1.5; }
-            .input  { @apply w-full px-4 py-3 rounded-xl border border-stone-300 bg-white text-sm outline-none transition focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500; }
-            .btn    { @apply w-full inline-flex justify-center items-center gap-2 bg-brand-600 hover:bg-brand-700 active:scale-[.98] text-white font-semibold text-sm py-3 px-4 rounded-xl shadow-sm transition; }
-            .btn-sm { @apply inline-flex items-center justify-center gap-1 text-xs font-semibold px-3 py-2 rounded-lg transition active:scale-95; }
+            /* Paper-ledger look: ruled paper, receipt cards, ink-stamp mark, mono money */
+            .paper  { background-color: #f7f5ef;
+                      background-image: repeating-linear-gradient(to bottom, transparent 0 31px, rgba(22,101,52,.055) 31px 32px); }
+            .card   { @apply bg-white rounded-xl border border-stone-200 shadow-[0_1px_0_rgba(0,0,0,.04)]; }
+            .label  { @apply block text-[11px] font-bold uppercase tracking-wider text-stone-500 mb-1.5; }
+            .input  { @apply w-full px-4 py-3 rounded-lg border border-stone-300 bg-white text-sm outline-none transition focus:ring-2 focus:ring-brand-500/30 focus:border-brand-600; }
+            .btn    { @apply w-full inline-flex justify-center items-center gap-2 bg-brand-700 hover:bg-brand-800 active:translate-y-px text-white font-bold text-sm py-3 px-4 rounded-lg transition; }
+            .btn-sm { @apply inline-flex items-center justify-center gap-1 text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95; }
+            .money  { @apply font-mono tabular-nums tracking-tight; }
+            .chip   { @apply inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full; }
+            .stamp  { @apply w-9 h-9 shrink-0 rounded-md -rotate-6 border-2 border-brand-700 text-brand-700 font-extrabold text-base flex items-center justify-center ring-1 ring-offset-2 ring-offset-cream ring-brand-700/40; }
+            .receipt { position: relative; margin-bottom: 8px; }
+            .receipt::after { content: ''; position: absolute; left: 0; right: 0; bottom: -8px; height: 8px;
+                background: linear-gradient(135deg, #166534 50%, transparent 50%) 0 0 / 12px 8px,
+                            linear-gradient(225deg, #166534 50%, transparent 50%) 0 0 / 12px 8px; }
         }
     </style>
 
     <link rel="manifest" href="{% url 'manifest' %}">
     <link rel="icon" type="image/png" href="{% static 'seller_app/icons/icon-192.png' %}">
     <link rel="apple-touch-icon" href="{% static 'seller_app/icons/apple-touch-icon.png' %}">
-    <meta name="theme-color" content="#15803d">
+    <meta name="theme-color" content="#f7f5ef">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -42,23 +55,23 @@
 </head>
 
 <body class="bg-stone-300 text-stone-800 font-sans antialiased h-dvh flex justify-center">
-<div class="w-full max-w-md bg-cream h-full flex flex-col shadow-2xl overflow-hidden relative">
+<div class="w-full max-w-md paper h-full flex flex-col shadow-2xl overflow-hidden relative">
 
-    <header class="bg-brand-700 text-white px-4 py-3.5 flex justify-between items-center z-10"
+    <header class="px-4 pb-3 flex justify-between items-center z-10 bg-cream border-b-2 border-dashed border-brand-700/25"
             style="padding-top: max(0.875rem, env(safe-area-inset-top))">
-        <div class="flex items-center gap-2.5 min-w-0">
-            <div class="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center font-extrabold text-sm shrink-0">₦</div>
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="stamp">₦</span>
             <div class="min-w-0">
-                <h1 class="text-base font-bold leading-tight truncate">{% block header %}Dashboard{% endblock %}</h1>
+                <h1 class="text-[17px] font-extrabold tracking-tight leading-tight truncate text-brand-900">{% block header %}Dashboard{% endblock %}</h1>
                 {% if request.user.is_authenticated %}
-                <p class="text-[11px] text-brand-100 leading-tight truncate">{{ request.user.business_name|default:request.user.username|default:request.user.phone_number }}</p>
+                <p class="text-[11px] text-stone-500 leading-tight truncate font-mono">{{ request.user.business_name|default:request.user.username|default:request.user.phone_number }}</p>
                 {% endif %}
             </div>
         </div>
         {% if request.user.is_authenticated %}
         <form method="POST" action="{% url 'logout' %}">
             {% csrf_token %}
-            <button type="submit" class="text-xs font-semibold bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full transition">Log out</button>
+            <button type="submit" class="text-xs font-bold text-brand-700 border border-brand-700/30 hover:bg-brand-50 px-3 py-1.5 rounded-full transition">Log out</button>
         </form>
         {% endif %}
     </header>
@@ -66,8 +79,8 @@
     <main class="flex-1 overflow-y-auto p-4 {% if request.user.is_authenticated %}pb-28{% else %}pb-8{% endif %} space-y-4">
         {% if messages %}
             {% for message in messages %}
-            <div class="rounded-xl px-4 py-3 text-sm font-medium border
-                {% if message.tags == 'error' %}bg-red-50 text-red-700 border-red-200{% else %}bg-brand-50 text-brand-800 border-brand-200{% endif %}">
+            <div class="rounded-lg px-4 py-3 text-sm font-semibold border-l-4
+                {% if message.tags == 'error' %}bg-red-50 text-red-700 border-red-500{% else %}bg-brand-50 text-brand-800 border-brand-600{% endif %}">
                 {{ message }}
             </div>
             {% endfor %}
@@ -77,7 +90,7 @@
 
     {% if request.user.is_authenticated %}
     {% with url=request.resolver_match.url_name %}
-    <nav class="absolute bottom-0 inset-x-0 bg-white/95 backdrop-blur border-t border-stone-200 grid grid-cols-4 items-end px-2 pt-2 z-10 text-[11px] font-semibold"
+    <nav class="absolute bottom-0 inset-x-0 bg-cream/95 backdrop-blur border-t-2 border-dashed border-brand-700/25 grid grid-cols-5 items-end px-1 pt-2 z-10 text-[10px] font-bold tracking-wide"
          style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))">
         <a href="{% url 'dashboard' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'dashboard' %}text-brand-700{% else %}text-stone-400{% endif %}">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>Home
@@ -86,12 +99,15 @@
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>Stock
         </a>
         <a href="{% url 'add_sale' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'add_sale' %}text-brand-700{% else %}text-stone-400{% endif %}">
-            <span class="-mt-7 w-12 h-12 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg ring-4 ring-cream">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            <span class="-mt-7 w-12 h-12 rounded-full bg-amber-400 text-brand-900 flex items-center justify-center shadow-lg ring-4 ring-cream">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
             </span>Sell
         </a>
+        <a href="{% url 'customers' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'customers' or url == 'add_customer' or url == 'update_customer' %}text-brand-700{% else %}text-stone-400{% endif %}">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 20a8 8 0 0116 0"/></svg>People
+        </a>
         <a href="{% url 'debts' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'debts' %}text-brand-700{% else %}text-stone-400{% endif %}">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.4-1.9M17 20H7m10 0v-2c0-.7-.1-1.3-.4-1.9M7 20H2v-2a3 3 0 015.4-1.9M7 20v-2c0-.7.1-1.3.4-1.9m0 0a5 5 0 019.3 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Debts
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l6-6M9.5 8.5h.01M14.5 13.5h.01M5 4h14v17l-3-2-2 2-2-2-2 2-2-2-3 2V4z"/></svg>Debts
         </a>
     </nav>
     {% endwith %}
@@ -103,6 +119,20 @@
     document.body.addEventListener('htmx:configRequest', (event) => {
         const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
         if (match) event.detail.headers['X-CSRFToken'] = match[1];
+    });
+
+    // Password "eye" toggle: works for any button with data-toggle-pw="<input id>"
+    document.addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-toggle-pw]');
+        if (!btn) return;
+        const input = document.getElementById(btn.dataset.togglePw);
+        if (!input) return;
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', String(show));
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        btn.querySelector('[data-eye]').classList.toggle('hidden', show);
+        btn.querySelector('[data-eye-off]').classList.toggle('hidden', !show);
     });
 </script>
 <script>

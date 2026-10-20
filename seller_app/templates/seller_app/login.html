@@ -5,9 +5,8 @@
 {% block content %}
 <div class="pt-6">
     <div class="text-center mb-6">
-        <div class="inline-flex items-center justify-center w-14 h-14 bg-brand-100 text-brand-700 rounded-2xl mb-3 text-2xl font-extrabold">₦</div>
-        <h2 class="text-2xl font-extrabold text-stone-800">Welcome back</h2>
-        <p class="text-sm text-stone-500 mt-1">Track sales, stock and who owes you.</p>
+        <h2 class="text-2xl font-extrabold text-brand-900">Welcome back</h2>
+        <p class="text-sm text-stone-500 mt-1">Sales, stock and who owes you, in one place.</p>
     </div>
 
     <form method="POST" action="{% url 'login' %}" class="card p-5 space-y-4">
@@ -19,14 +18,13 @@
         </div>
         <div>
             <label for="password" class="label">Password</label>
-            <input type="password" id="password" name="password" required autocomplete="current-password"
-                   class="input" placeholder="••••••••">
+            {% include 'seller_app/partials/password_input.html' with id='password' name='password' autocomplete='current-password' placeholder='••••••••' %}
         </div>
         <button type="submit" class="btn">Sign in</button>
     </form>
 
     <p class="text-center text-sm text-stone-500 mt-6">
-        New here? <a href="{% url 'register' %}" class="text-brand-700 font-semibold hover:underline">Create an account</a>
+        New here? <a href="{% url 'register' %}" class="text-brand-700 font-bold hover:underline">Create an account</a>
     </p>
 </div>
 {% endblock %}

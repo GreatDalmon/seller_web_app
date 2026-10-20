@@ -5,21 +5,21 @@
 {% block content %}
 <form action="{% url 'add_product' %}" method="POST" class="card p-4 space-y-3">
     {% csrf_token %}
-    <h3 class="text-sm font-bold text-stone-700">Add a product</h3>
+    <h3 class="text-sm font-extrabold text-brand-900">Add a product</h3>
     <input type="text" name="name" placeholder="Product name (e.g. Phone case)" required maxlength="100" class="input">
     <div class="flex gap-3">
-        <input type="number" name="price" placeholder="Price (₦)" required min="0" step="0.01" inputmode="decimal" class="input w-1/2">
-        <input type="number" name="stock" placeholder="Stock" required min="0" value="0" inputmode="numeric" class="input w-1/2">
+        <input type="number" name="price" placeholder="Price (₦)" required min="0" step="0.01" inputmode="decimal" class="input money w-1/2">
+        <input type="number" name="stock" placeholder="Stock" required min="0" value="0" inputmode="numeric" class="input money w-1/2">
     </div>
     <button type="submit" class="btn">Add to inventory</button>
 </form>
 
 <div class="card overflow-hidden">
-    <div class="px-4 py-3 bg-stone-50 border-b border-stone-100 flex justify-between items-center">
-        <h3 class="text-sm font-bold text-stone-700">Current stock</h3>
-        <span class="text-xs text-stone-500">{{ products|length }} item{{ products|length|pluralize }}</span>
+    <div class="px-4 py-3 border-b border-dashed border-stone-300 flex justify-between items-center">
+        <h3 class="text-sm font-extrabold text-brand-900">Current stock</h3>
+        <span class="text-xs text-stone-500 font-mono">{{ products|length }} item{{ products|length|pluralize }}</span>
     </div>
-    <div class="divide-y divide-stone-100">
+    <div class="divide-y divide-dashed divide-stone-200">
         {% for product in products %}
             {% include 'seller_app/partials/product_row.html' %}
         {% empty %}
