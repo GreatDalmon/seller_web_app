@@ -1,22 +1,22 @@
 {% load humanize %}<div class="p-4 flex items-center justify-between gap-3" id="product-{{ product.id }}">
     <div class="flex-1 min-w-0">
-        <h4 class="font-semibold text-stone-800 text-sm truncate">{{ product.name }}</h4>
-        <p class="text-brand-700 font-bold text-xs mt-1">₦{{ product.price|floatformat:2|intcomma }}
-            {% if product.stock == 0 %}<span class="ml-2 text-red-600">Out of stock</span>
-            {% elif product.is_low %}<span class="ml-2 text-amber-600">Low</span>{% endif %}
+        <h4 class="font-bold text-stone-800 text-sm truncate">{{ product.name }}</h4>
+        <p class="money text-brand-700 text-xs mt-1">₦{{ product.price|floatformat:2|intcomma }}
+            {% if product.stock == 0 %}<span class="chip bg-red-100 text-red-700 ml-2 font-sans">Out of stock</span>
+            {% elif product.is_low %}<span class="chip bg-amber-100 text-amber-900 ml-2 font-sans">Low</span>{% endif %}
         </p>
     </div>
 
-    <div class="flex items-center gap-1 bg-stone-50 rounded-xl p-1 border border-stone-200">
+    <div class="flex items-center gap-1 bg-cream rounded-lg p-1 border border-stone-300">
         <button hx-post="{% url 'update_stock' product.id %}" hx-vals='{"action": "decrease"}'
                 hx-target="#product-{{ product.id }}" hx-swap="outerHTML" aria-label="Decrease stock"
-                class="w-9 h-9 flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition active:scale-95">
+                class="w-9 h-9 flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-md transition active:scale-95">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4"/></svg>
         </button>
-        <span class="font-extrabold text-stone-800 w-8 text-center text-sm">{{ product.stock }}</span>
+        <span class="money font-medium text-stone-800 w-8 text-center text-sm">{{ product.stock }}</span>
         <button hx-post="{% url 'update_stock' product.id %}" hx-vals='{"action": "increase"}'
                 hx-target="#product-{{ product.id }}" hx-swap="outerHTML" aria-label="Increase stock"
-                class="w-9 h-9 flex items-center justify-center text-stone-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition active:scale-95">
+                class="w-9 h-9 flex items-center justify-center text-stone-500 hover:text-brand-700 hover:bg-brand-50 rounded-md transition active:scale-95">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
         </button>
     </div>
