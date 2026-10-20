@@ -1,6 +1,9 @@
 {% load humanize %}<div class="p-4 flex items-center justify-between gap-3" id="product-{{ product.id }}">
     <div class="flex-1 min-w-0">
-        <h4 class="font-bold text-stone-800 text-sm truncate">{{ product.name }}</h4>
+        <a href="{% url 'edit_product' product.id %}" class="flex items-center gap-1.5 min-w-0 group" aria-label="Edit {{ product.name }}">
+            <h4 class="font-bold text-stone-800 text-sm truncate group-hover:text-brand-700">{{ product.name }}</h4>
+            <svg class="w-3.5 h-3.5 text-stone-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.2 5.2l3.6 3.6M4 20l1-4L16.5 4.5a2 2 0 012.8 0l.2.2a2 2 0 010 2.8L8 19l-4 1z"/></svg>
+        </a>
         <p class="money text-brand-700 text-xs mt-1">₦{{ product.price|floatformat:2|intcomma }}
             {% if product.stock == 0 %}<span class="chip bg-red-100 text-red-700 ml-2 font-sans">Out of stock</span>
             {% elif product.is_low %}<span class="chip bg-amber-100 text-amber-900 ml-2 font-sans">Low</span>{% endif %}
