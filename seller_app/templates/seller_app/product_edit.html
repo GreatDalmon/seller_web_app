@@ -1,0 +1,34 @@
+{% extends 'seller_app/base.html' %}
+{% block title %}Edit product | Seller Ops{% endblock %}
+{% block header %}Edit product{% endblock %}
+
+{% block content %}
+<form method="POST" action="{% url 'edit_product' product.pk %}" class="card p-4 space-y-4">
+    {% csrf_token %}
+    <div>
+        <label class="label" for="name">Product name</label>
+        <input type="text" id="name" name="name" required maxlength="100" value="{{ form.name }}" class="input">
+    </div>
+    <div class="flex gap-3">
+        <div class="w-1/2">
+            <label class="label" for="price">Price (₦)</label>
+            <input type="number" id="price" name="price" required min="0" step="0.01" inputmode="decimal" value="{{ form.price|stringformat:'s' }}" class="input money">
+        </div>
+        <div class="w-1/2">
+            <label class="label" for="stock">In stock</label>
+            <input type="number" id="stock" name="stock" required min="0" inputmode="numeric" value="{{ form.stock }}" class="input money">
+        </div>
+    </div>
+    <p class="text-xs text-stone-500">Changing the price only affects future sales. Past sales keep the price they were sold at.</p>
+    <button type="submit" class="btn">Save changes</button>
+    <a href="{% url 'stock' %}" class="btn-sm w-full bg-stone-100 text-stone-700 hover:bg-stone-200 py-2.5">Cancel</a>
+</form>
+
+<form method="POST" action="{% url 'delete_product' product.pk %}"
+      onsubmit="return confirm('Delete this product? This cannot be undone.');" class="card p-4">
+    {% csrf_token %}
+    <h3 class="text-sm font-extrabold text-red-700">Delete product</h3>
+    <p class="text-xs text-stone-500 mt-1 mb-3">Only possible if it was never sold. Otherwise set its stock to 0 and it will stop showing on the sale form.</p>
+    <button type="submit" class="btn-sm w-full bg-red-50 text-red-700 hover:bg-red-100 py-2.5">Delete {{ product.name }}</button>
+</form>
+{% endblock %}

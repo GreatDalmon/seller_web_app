@@ -92,10 +92,10 @@
     {% with url=request.resolver_match.url_name %}
     <nav class="absolute bottom-0 inset-x-0 bg-cream/95 backdrop-blur border-t-2 border-dashed border-brand-700/25 grid grid-cols-5 items-end px-1 pt-2 z-10 text-[10px] font-bold tracking-wide"
          style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom))">
-        <a href="{% url 'dashboard' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'dashboard' %}text-brand-700{% else %}text-stone-400{% endif %}">
+        <a href="{% url 'dashboard' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'dashboard' or url == 'sales' %}text-brand-700{% else %}text-stone-400{% endif %}">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>Home
         </a>
-        <a href="{% url 'stock' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'stock' %}text-brand-700{% else %}text-stone-400{% endif %}">
+        <a href="{% url 'stock' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'stock' or url == 'edit_product' %}text-brand-700{% else %}text-stone-400{% endif %}">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>Stock
         </a>
         <a href="{% url 'add_sale' %}" class="flex flex-col items-center gap-1 py-1 {% if url == 'add_sale' %}text-brand-700{% else %}text-stone-400{% endif %}">
