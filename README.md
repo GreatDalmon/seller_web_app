@@ -18,11 +18,3 @@ A lightweight, robust Django web application built to streamline daily store ope
 *   **Frontend:** HTML5, CSS, Django Templates
 *   **Deployment:** Vercel (Serverless), Gunicorn
 
-## 🚀 Local Development Setup
-
-To run this project locally on your machine, follow these steps:
-
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
-   cd your-repo-name
