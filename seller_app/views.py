@@ -7,6 +7,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
@@ -190,6 +191,49 @@ def update_stock(request, pk):
     return render(request, 'seller_app/partials/product_row.html', {'product': product})
 
 
+@login_required
+def edit_product(request, pk):
+    product = get_object_or_404(Product, pk=pk, seller=request.user)
+    form = {'name': product.name, 'price': product.price, 'stock': product.stock}
+
+    if request.method == 'POST':
+        name = request.POST.get('name', '').strip()[:100]
+        price = to_decimal(request.POST.get('price'))
+        stock = to_int(request.POST.get('stock'))
+        form = {'name': name, 'price': request.POST.get('price', ''), 'stock': request.POST.get('stock', '')}
+
+        if not name or price is None:
+            messages.error(request, 'Enter a product name and a valid price.')
+        elif stock is None or stock < 0:
+            messages.error(request, 'Stock must be 0 or more.')
+        else:
+            with transaction.atomic():
+                locked = Product.objects.select_for_update().get(pk=product.pk)
+                locked.name, locked.price, locked.stock = name, price, stock
+                locked.save(update_fields=['name', 'price', 'stock'])
+            messages.success(request, f'{name} updated.')
+            return redirect('stock')
+
+    return render(request, 'seller_app/product_edit.html', {'product': product, 'form': form})
+
+
+@login_required
+@require_POST
+def delete_product(request, pk):
+    product = get_object_or_404(Product, pk=pk, seller=request.user)
+    # SaleItem.product is PROTECT: a product that was ever sold stays so past sales keep their records.
+    if SaleItem.objects.filter(product=product).exists():
+        messages.error(
+            request,
+            f'{product.name} appears in past sales, so it cannot be deleted. '
+            'Set its stock to 0 and it will stop showing on the sale form.')
+        return redirect('edit_product', pk=product.pk)
+    name = product.name
+    product.delete()
+    messages.success(request, f'{name} deleted.')
+    return redirect('stock')
+
+
 # ---------- sales ----------
 def _sale_form_context(request, products, form=None, rows=None):
     customers = list(Customer.objects.filter(seller=request.user)
@@ -289,6 +333,32 @@ def add_sale(request):
                       _sale_form_context(request, products, form, rows))
 
     return render(request, 'seller_app/add_sale.html', _sale_form_context(request, products))
+
+
+@login_required
+def sales_history(request):
+    q = request.GET.get('q', '').strip()
+    qs = (Sale.objects.filter(seller=request.user)
+          .select_related('customer').prefetch_related('items__product').order_by('-date', '-id'))
+    if q:
+        qs = qs.filter(customer__name__icontains=q)
+    page = Paginator(qs, 20).get_page(request.GET.get('page'))
+    return render(request, 'seller_app/sales.html', {'page': page, 'q': q})
+
+
+@login_required
+@require_POST
+def void_sale(request, pk):
+    """Undo a wrongly recorded sale: put the stock back and remove the sale (and any payment on it)."""
+    with transaction.atomic():
+        sale = get_object_or_404(Sale.objects.select_for_update(), pk=pk, seller=request.user)
+        items = list(sale.items.all())
+        for item in items:
+            Product.objects.filter(pk=item.product_id).update(stock=F('stock') + item.quantity)
+        label = sale.customer.name if sale.customer else 'Walk-in'
+        sale.delete()  # SaleItems are removed with it
+    messages.success(request, f'Sale for {label} voided and the stock was put back.')
+    return redirect('sales')
 
 
 # ---------- customers (everyone you sell to, not only debtors) ----------
