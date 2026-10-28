@@ -11,10 +11,12 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from .invoice import build_invoice_data, file_name, render_jpg, render_pdf
 from .models import Customer, Product, Sale, SaleItem, Seller
 
 ZERO = Decimal('0')
@@ -326,13 +328,42 @@ def add_sale(request):
                             request, f'{summary} {customer.name} still owes ₦{owing:,.2f}.')
                     else:
                         messages.success(request, f'{summary} {customer.name} paid in full.')
-                    return redirect('dashboard')
+                    return redirect('invoice', pk=sale.pk)
 
         messages.error(request, error)
         return render(request, 'seller_app/add_sale.html',
                       _sale_form_context(request, products, form, rows))
 
     return render(request, 'seller_app/add_sale.html', _sale_form_context(request, products))
+
+
+def _invoice_sale(request, pk):
+    return get_object_or_404(
+        Sale.objects.select_related('customer').prefetch_related('items__product'),
+        pk=pk, seller=request.user)
+
+
+@login_required
+def invoice_page(request, pk):
+    sale = _invoice_sale(request, pk)
+    return render(request, 'seller_app/invoice.html',
+                  {'sale': sale, 'inv': build_invoice_data(sale, request.user)})
+
+
+@login_required
+def invoice_file(request, pk, fmt):
+    """Download the invoice as a PDF or a JPG image (add ?inline=1 to open it in the browser instead)."""
+    sale = _invoice_sale(request, pk)
+    data = build_invoice_data(sale, request.user)
+    if fmt == 'pdf':
+        body, content_type = render_pdf(data), 'application/pdf'
+    else:
+        fmt, body, content_type = 'jpg', render_jpg(data), 'image/jpeg'
+    response = HttpResponse(body, content_type=content_type)
+    kind = 'inline' if request.GET.get('inline') else 'attachment'
+    response['Content-Disposition'] = f'{kind}; filename="{file_name(data, fmt)}"'
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @login_required

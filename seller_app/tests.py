@@ -6,10 +6,14 @@ Run locally with the SQLite database (leave DATABASE_URL unset so tests never to
     python manage.py test seller_app
 """
 from decimal import Decimal
+from io import BytesIO
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
+from PIL import Image
 
+from .invoice import build_invoice_data
 from .models import Customer, Product, Sale, SaleItem, Seller
 
 PASSWORD = 'Str0ng!pass9'
@@ -232,7 +236,8 @@ class PageSmokeTests(BaseCase):
         customer = Customer.objects.get()
         for name, args in [('dashboard', []), ('stock', []), ('add_sale', []), ('sales', []),
                            ('customers', []), ('debts', []),
-                           ('edit_product', [self.shirt.pk])]:
+                           ('edit_product', [self.shirt.pk]),
+                           ('invoice', [sale.pk]), ('invoice_pdf', [sale.pk]), ('invoice_jpg', [sale.pk])]:
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name, args=args)).status_code, 200)
         self.assertEqual(self.client.get(reverse('sales') + '?q=joy').status_code, 200)
@@ -248,3 +253,89 @@ class PageSmokeTests(BaseCase):
         self.client.logout()
         self.assertContains(self.client.get(reverse('login')), 'data-toggle-pw')
         self.assertContains(self.client.get(reverse('register')), 'confirm_password')
+
+
+class InvoiceTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.seller.business_name = 'Joy Fashion Hub'
+        self.seller.save()
+        self.sell([(self.shirt, 2), (self.cap, 3)], paid='1000')
+        self.sale = Sale.objects.get()
+
+    def test_recording_a_sale_opens_its_invoice(self):
+        response = self.sell([(self.cap, 1)])
+        newest = Sale.objects.order_by('-id').first()
+        self.assertRedirects(response, reverse('invoice', args=[newest.pk]))
+
+    def test_invoice_page_shows_company_date_time_and_items(self):
+        response = self.client.get(reverse('invoice', args=[self.sale.pk]))
+        local = timezone.localtime(self.sale.date)
+        self.assertContains(response, 'Joy Fashion Hub')
+        self.assertContains(response, f'INV-{self.sale.pk:05d}')
+        self.assertContains(response, local.strftime('%d %b %Y'))
+        self.assertContains(response, 'Shirt')
+        self.assertContains(response, '4,500.00')  # balance due
+
+    def test_pdf_download(self):
+        response = self.client.get(reverse('invoice_pdf', args=[self.sale.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF'))
+        self.assertIn('attachment', response['Content-Disposition'])
+        self.assertIn(f'INV-{self.sale.pk:05d}', response['Content-Disposition'])
+        self.assertIn('.pdf', response['Content-Disposition'])
+
+    def test_jpg_download(self):
+        response = self.client.get(reverse('invoice_jpg', args=[self.sale.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'image/jpeg')
+        image = Image.open(BytesIO(response.content))
+        self.assertEqual(image.format, 'JPEG')
+        self.assertEqual(image.size[0], 1000)
+
+    def test_inline_option_opens_in_browser(self):
+        response = self.client.get(reverse('invoice_pdf', args=[self.sale.pk]) + '?inline=1')
+        self.assertIn('inline', response['Content-Disposition'])
+
+    def test_invoice_data_uses_company_name_and_local_time(self):
+        data = build_invoice_data(self.sale, self.seller)
+        local = timezone.localtime(self.sale.date)
+        self.assertEqual(data.company, 'Joy Fashion Hub')
+        self.assertEqual(data.date, local.strftime('%d %b %Y'))
+        self.assertEqual(data.time, local.strftime('%I:%M %p').lstrip('0'))
+        self.assertEqual((len(data.lines), data.total, data.paid, data.balance),
+                         (2, Decimal('5500'), Decimal('1000'), Decimal('4500')))
+
+    def test_company_name_falls_back_to_seller_name(self):
+        self.seller.business_name = ''
+        self.seller.username = 'Ada'
+        self.seller.save()
+        self.assertEqual(build_invoice_data(self.sale, self.seller).company, 'Ada')
+
+    def test_invoice_uses_price_at_time_of_sale(self):
+        self.client.post(reverse('edit_product', args=[self.shirt.pk]),
+                         {'name': 'Shirt', 'price': '9999', 'stock': '8'})
+        data = build_invoice_data(Sale.objects.get(pk=self.sale.pk), self.seller)
+        shirt_line = next(l for l in data.lines if l.name == 'Shirt')
+        self.assertEqual(shirt_line.unit_price, Decimal('2000'))
+
+    def test_another_seller_cannot_open_the_invoice(self):
+        make_seller('08033333333')
+        self.client.logout()
+        self.client.force_login(Seller.objects.get(phone_number='08033333333'))
+        for name in ('invoice', 'invoice_pdf', 'invoice_jpg'):
+            with self.subTest(page=name):
+                self.assertEqual(self.client.get(reverse(name, args=[self.sale.pk])).status_code, 404)
+
+    def test_invoice_requires_login(self):
+        self.client.logout()
+        for name in ('invoice', 'invoice_pdf', 'invoice_jpg'):
+            with self.subTest(page=name):
+                self.assertEqual(self.client.get(reverse(name, args=[self.sale.pk])).status_code, 302)
+
+    def test_walk_in_sale_still_renders(self):
+        walk_in = Sale.objects.create(seller=self.seller, total_amount=Decimal('500'), amount_paid=Decimal('500'))
+        for name in ('invoice', 'invoice_pdf', 'invoice_jpg'):
+            with self.subTest(page=name):
+                self.assertEqual(self.client.get(reverse(name, args=[walk_in.pk])).status_code, 200)
