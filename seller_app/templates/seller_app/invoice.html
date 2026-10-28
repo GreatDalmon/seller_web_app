@@ -1,0 +1,86 @@
+{% extends 'seller_app/base.html' %}
+{% load humanize %}
+{% block title %}Invoice {{ inv.number }} | Seller Ops{% endblock %}
+{% block header %}Invoice{% endblock %}
+
+{% block content %}
+<section class="card overflow-hidden">
+    <div class="bg-brand-700 text-white px-5 py-4">
+        <p class="text-lg font-extrabold leading-tight break-words">{{ inv.company }}</p>
+        {% if inv.company_phone %}<p class="text-xs text-brand-200 mt-1 font-mono">Tel: {{ inv.company_phone }}</p>{% endif %}
+    </div>
+
+    <div class="p-5 space-y-4">
+        <div class="flex justify-between items-baseline border-b border-dashed border-stone-300 pb-3">
+            <span class="text-xl font-extrabold text-brand-700">INVOICE</span>
+            <span class="money text-sm font-medium">{{ inv.number }}</span>
+        </div>
+
+        <div class="flex justify-between gap-4">
+            <div class="min-w-0">
+                <p class="label !mb-1">Billed to</p>
+                <p class="text-sm font-bold truncate">{{ inv.customer }}</p>
+                {% if inv.customer_phone %}<p class="money text-xs text-stone-500">{{ inv.customer_phone }}</p>{% endif %}
+            </div>
+            <div class="text-right shrink-0">
+                <p class="label !mb-1">Date &amp; time</p>
+                <p class="text-sm font-bold">{{ inv.date }}</p>
+                <p class="text-xs text-stone-500 font-mono">{{ inv.time }}</p>
+            </div>
+        </div>
+
+        <ul class="divide-y divide-dashed divide-stone-200 border-y border-dashed border-stone-300 text-sm">
+            {% for line in inv.lines %}
+            <li class="py-2.5 flex justify-between gap-3">
+                <span class="min-w-0">{{ line.name }}<span class="block text-xs text-stone-500 money">{{ line.quantity }} × ₦{{ line.unit_price|floatformat:2|intcomma }}</span></span>
+                <span class="money font-medium shrink-0">₦{{ line.amount|floatformat:2|intcomma }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <dl class="text-sm space-y-1.5">
+            <div class="flex justify-between"><dt class="text-stone-500">Total</dt><dd class="money font-medium">₦{{ inv.total|floatformat:2|intcomma }}</dd></div>
+            <div class="flex justify-between"><dt class="text-stone-500">Amount paid</dt><dd class="money font-medium">₦{{ inv.paid|floatformat:2|intcomma }}</dd></div>
+            <div class="flex justify-between rounded-lg px-3 py-2 font-bold {% if inv.is_paid %}bg-brand-50 text-brand-800{% else %}bg-amber-100 text-amber-900{% endif %}">
+                <dt>{% if inv.is_paid %}Paid in full{% else %}Balance due{% endif %}</dt>
+                <dd class="money">₦{{ inv.balance|floatformat:2|intcomma }}</dd>
+            </div>
+        </dl>
+    </div>
+</section>
+
+<div class="space-y-3">
+    <a href="{% url 'invoice_pdf' sale.pk %}" class="btn">Download PDF</a>
+    <a href="{% url 'invoice_jpg' sale.pk %}" class="btn bg-brand-900">Download JPG</a>
+    <button type="button" id="share-btn" class="btn hidden !bg-amber-400 !text-brand-900 hover:!bg-amber-300"
+            data-url="{% url 'invoice_jpg' sale.pk %}" data-name="{{ inv.number }}.jpg" data-title="Invoice {{ inv.number }}">
+        Share on WhatsApp &amp; more
+    </button>
+    <div class="flex gap-3">
+        <a href="{% url 'add_sale' %}" class="btn-sm flex-1 bg-white border border-stone-300 text-brand-700 py-3">New sale</a>
+        <a href="{% url 'sales' %}" class="btn-sm flex-1 bg-white border border-stone-300 text-brand-700 py-3">All sales</a>
+    </div>
+</div>
+
+<script>
+// Offer "Share" only where the phone can share an image file (opens WhatsApp, Telegram, etc.)
+(function () {
+    const btn = document.getElementById('share-btn');
+    if (!(navigator.share && navigator.canShare)) return;
+    btn.classList.remove('hidden');
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+            const res = await fetch(btn.dataset.url, {credentials: 'same-origin'});
+            const file = new File([await res.blob()], btn.dataset.name, {type: 'image/jpeg'});
+            if (navigator.canShare({files: [file]})) {
+                await navigator.share({files: [file], title: btn.dataset.title});
+            } else {
+                window.location.href = btn.dataset.url;
+            }
+        } catch (e) { /* share sheet closed */ }
+        btn.disabled = false;
+    });
+})();
+</script>
+{% endblock %}

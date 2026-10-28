@@ -39,6 +39,8 @@
                 <span>Paid</span><span class="money">₦{{ sale.amount_paid|floatformat:2|intcomma }}</span>
             </div>
 
+            <a href="{% url 'invoice' sale.pk %}" class="btn-sm w-full bg-brand-50 text-brand-700 hover:bg-brand-100 py-2.5">Invoice (PDF / JPG)</a>
+
             <form method="POST" action="{% url 'void_sale' sale.pk %}"
                   onsubmit="return confirm('Void this sale? The stock goes back{% if sale.amount_paid > 0 %} and the ₦{{ sale.amount_paid|floatformat:2|intcomma }} payment recorded on it is removed{% endif %}. This cannot be undone.');">
                 {% csrf_token %}
