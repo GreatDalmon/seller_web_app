@@ -52,15 +52,60 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Seller Ops">
+
+    <script>try{var d=document.documentElement;if(sessionStorage.getItem('so-splash'))d.classList.add('no-splash');else sessionStorage.setItem('so-splash','1')}catch(e){}</script>
+    <style>
+        /* Launch animation: green tile pops, the white N is drawn, then the two bars slide in (geometry matches the app icon) */
+        #splash{position:fixed;inset:0;z-index:100;background:#f7f5ef;display:flex;align-items:center;justify-content:center;animation:sp-out .4s ease 2.9s forwards}
+        #splash.hide{opacity:0;visibility:hidden;transition:opacity .4s ease}
+        .no-splash #splash{display:none}
+        #splash svg{width:min(44vw,176px);height:auto;filter:drop-shadow(0 14px 26px rgba(20,83,45,.28))}
+        .sp-bg{transform-box:fill-box;transform-origin:center;opacity:0;animation:sp-pop .55s cubic-bezier(.2,.8,.3,1) forwards}
+        .sp-line{stroke-dasharray:100;stroke-dashoffset:100;animation:sp-draw .45s ease-in-out forwards}
+        .sp-s1{animation-delay:.55s}.sp-s2{animation-delay:1s}.sp-s3{animation-delay:1.5s}
+        .sp-bar{transform-box:fill-box;transform-origin:left center;transform:scaleX(0);animation:sp-bar .3s ease-out forwards}
+        .sp-b1{animation-delay:2s}.sp-b2{animation-delay:2.15s}
+        @keyframes sp-pop{0%{transform:scale(.35);opacity:0}60%{transform:scale(1.07);opacity:1}100%{transform:scale(1);opacity:1}}
+        @keyframes sp-draw{to{stroke-dashoffset:0}}
+        @keyframes sp-bar{to{transform:scaleX(1)}}
+        @keyframes sp-out{to{opacity:0;visibility:hidden}}
+        @media (prefers-reduced-motion:reduce){
+            #splash{animation-delay:.7s}
+            .sp-bg,.sp-line,.sp-bar{animation:none;opacity:1;stroke-dashoffset:0;transform:none}
+        }
+    </style>
 </head>
 
 <body class="bg-stone-300 text-stone-800 font-sans antialiased h-dvh flex justify-center">
+<div id="splash" aria-hidden="true">
+    <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs><clipPath id="splash-clip"><rect x="154.7" y="138.5" width="202.7" height="223.7"/></clipPath></defs>
+        <rect class="sp-bg" width="512" height="512" rx="112" fill="#15803d"/>
+        <g clip-path="url(#splash-clip)" fill="none" stroke="#fff">
+            <line class="sp-line sp-s1" pathLength="100" x1="200.85" y1="362.2" x2="200.85" y2="138.5" stroke-width="54.5"/>
+            <line class="sp-line sp-s2" pathLength="100" x1="208.7" y1="109" x2="303.1" y2="392" stroke-width="35.7"/>
+            <line class="sp-line sp-s3" pathLength="100" x1="311.4" y1="362.2" x2="311.4" y2="138.5" stroke-width="54.5"/>
+        </g>
+        <rect class="sp-bar sp-b1" x="154.7" y="204.1" width="202.7" height="29" fill="#fff"/>
+        <rect class="sp-bar sp-b2" x="154.7" y="267.6" width="202.7" height="28.9" fill="#fff"/>
+    </svg>
+</div>
+
 <div class="w-full max-w-md paper h-full flex flex-col shadow-2xl overflow-hidden relative">
 
     <header class="px-4 pb-3 flex justify-between items-center z-10 bg-cream border-b-2 border-dashed border-brand-700/25"
             style="padding-top: max(0.875rem, env(safe-area-inset-top))">
         <div class="flex items-center gap-3 min-w-0">
+            {% with page=request.resolver_match.url_name %}
+            {% if request.user.is_authenticated and page != 'dashboard' or not request.user.is_authenticated and page != 'login' %}
+            <a href="{% block back_href %}{% if request.user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'login' %}{% endif %}{% endblock %}"
+               aria-label="Go back" class="w-9 h-9 shrink-0 rounded-md border-2 border-brand-700/30 text-brand-700 flex items-center justify-center hover:bg-brand-50 active:scale-95 transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            {% else %}
             <span class="stamp">₦</span>
+            {% endif %}
+            {% endwith %}
             <div class="min-w-0">
                 <h1 class="text-[17px] font-extrabold tracking-tight leading-tight truncate text-brand-900">{% block header %}Dashboard{% endblock %}</h1>
                 {% if request.user.is_authenticated %}
@@ -69,10 +114,20 @@
             </div>
         </div>
         {% if request.user.is_authenticated %}
-        <form method="POST" action="{% url 'logout' %}">
-            {% csrf_token %}
-            <button type="submit" class="text-xs font-bold text-brand-700 border border-brand-700/30 hover:bg-brand-50 px-3 py-1.5 rounded-full transition">Log out</button>
-        </form>
+        <div class="flex items-center gap-2 shrink-0">
+            <a href="{% url 'profile' %}" aria-label="Your profile" class="block">
+                {% if request.user.photo_updated %}
+                <img src="{% url 'profile_photo' 'small' %}?v={{ request.user.photo_updated|date:'U' }}" alt="" width="36" height="36"
+                     class="w-9 h-9 rounded-full object-cover border-2 border-brand-700/30">
+                {% else %}
+                <span class="w-9 h-9 rounded-full bg-brand-100 text-brand-800 font-extrabold text-sm flex items-center justify-center border-2 border-brand-700/20">{{ request.user.business_name|default:request.user.username|default:"S"|slice:":1"|upper }}</span>
+                {% endif %}
+            </a>
+            <form method="POST" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="text-xs font-bold text-brand-700 border border-brand-700/30 hover:bg-brand-50 px-3 py-1.5 rounded-full transition">Log out</button>
+            </form>
+        </div>
         {% endif %}
     </header>
 
@@ -136,6 +191,13 @@
     });
 </script>
 <script>
+    (function () {
+        var el = document.getElementById('splash');
+        if (!el) return;
+        if (document.documentElement.classList.contains('no-splash')) { el.remove(); return; }
+        var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        setTimeout(function () { el.classList.add('hide'); setTimeout(function () { el.remove(); }, 450); }, reduce ? 700 : 2900);
+    })();
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => navigator.serviceWorker.register('{% url "service_worker" %}', { scope: '/' }).catch(() => {}));
     }

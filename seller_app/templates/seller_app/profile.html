@@ -1,0 +1,92 @@
+{% extends 'seller_app/base.html' %}
+{% block title %}Profile | Seller Ops{% endblock %}
+{% block header %}Profile{% endblock %}
+
+{% block content %}
+<section class="card p-5 flex flex-col items-center text-center">
+    {% if request.user.photo_updated %}
+    <a href="{% url 'profile_photo' 'large' %}?v={{ request.user.photo_updated|date:'U' }}" target="_blank" rel="noopener" aria-label="View photo full size">
+        <img src="{% url 'profile_photo' 'medium' %}?v={{ request.user.photo_updated|date:'U' }}" alt="Your profile photo" width="112" height="112"
+             class="w-28 h-28 rounded-full object-cover border-4 border-brand-700/20">
+    </a>
+    {% else %}
+    <div class="w-28 h-28 rounded-full bg-brand-100 text-brand-800 text-4xl font-extrabold flex items-center justify-center border-4 border-brand-700/20">
+        {{ request.user.business_name|default:request.user.username|default:"S"|slice:":1"|upper }}
+    </div>
+    {% endif %}
+
+    <form id="photo-form" method="POST" action="{% url 'upload_photo' %}" enctype="multipart/form-data" class="mt-4">
+        {% csrf_token %}
+        <input type="file" id="photo-input" name="photo" accept="image/*" class="sr-only">
+        <label for="photo-input" class="btn-sm bg-brand-700 text-white hover:bg-brand-800 px-5 py-2.5 cursor-pointer">
+            {% if request.user.photo_updated %}Change photo{% else %}Add a photo{% endif %}
+        </label>
+    </form>
+    <p id="photo-status" class="text-xs text-stone-500 mt-2" aria-live="polite">Any size works (JPG, PNG or WebP). We resize it for you.</p>
+
+    {% if request.user.photo_updated %}
+    <form method="POST" action="{% url 'remove_photo' %}" onsubmit="return confirm('Remove your profile photo?');" class="mt-2">
+        {% csrf_token %}
+        <button type="submit" class="text-xs font-bold text-red-700 hover:underline">Remove photo</button>
+    </form>
+    {% endif %}
+</section>
+
+<form method="POST" action="{% url 'profile' %}" class="card p-4 space-y-4">
+    {% csrf_token %}
+    <div>
+        <label class="label" for="username">Your name</label>
+        <input type="text" id="username" name="username" required maxlength="50" value="{{ form.username }}" autocomplete="name" class="input">
+    </div>
+    <div>
+        <label class="label" for="business_name">Business name <span class="normal-case font-normal text-stone-400">(shown on invoices)</span></label>
+        <input type="text" id="business_name" name="business_name" maxlength="100" value="{{ form.business_name }}" class="input">
+    </div>
+    <div>
+        <label class="label" for="email">Email <span class="normal-case font-normal text-stone-400">(to reset your password)</span></label>
+        <input type="email" id="email" name="email" maxlength="254" value="{{ form.email }}" autocomplete="email" inputmode="email" placeholder="you@example.com" class="input">
+        {% if not request.user.email %}
+        <p class="text-xs text-amber-700 font-semibold mt-1.5">No email saved yet. Add one so you can recover your account if you forget your password.</p>
+        {% endif %}
+    </div>
+    <div>
+        <span class="label">Phone number (your login)</span>
+        <p class="money text-sm text-stone-600">{{ request.user.phone_number }}</p>
+    </div>
+    <button type="submit" class="btn">Save changes</button>
+</form>
+
+<script>
+// Phones take huge photos and the server accepts at most ~4 MB per upload, so shrink the picture
+// in the browser first (also fixes sideways photos), then send it.
+(function () {
+    var input = document.getElementById('photo-input');
+    var form = document.getElementById('photo-form');
+    var status = document.getElementById('photo-status');
+    input.addEventListener('change', async function () {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        status.textContent = 'Preparing your photo…';
+        try {
+            var bitmap = await createImageBitmap(file, {imageOrientation: 'from-image'});
+            var scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+            var canvas = document.createElement('canvas');
+            canvas.width = Math.round(bitmap.width * scale);
+            canvas.height = Math.round(bitmap.height * scale);
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            var blob = await new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.9); });
+            if (blob && window.DataTransfer) {
+                var transfer = new DataTransfer();
+                transfer.items.add(new File([blob], 'photo.jpg', {type: 'image/jpeg'}));
+                input.files = transfer.files;
+            }
+        } catch (e) { /* send the original file instead */ }
+        status.textContent = 'Uploading…';
+        form.submit();
+    });
+})();
+</script>
+{% endblock %}

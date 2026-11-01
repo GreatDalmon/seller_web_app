@@ -27,6 +27,11 @@
                    class="input" placeholder="e.g. 08012345678">
         </div>
         <div>
+            <label class="label" for="email">Email <span class="normal-case font-normal text-stone-400">(optional, lets you reset a forgotten password)</span></label>
+            <input type="email" id="email" name="email" value="{{ form.email }}" inputmode="email" autocomplete="email"
+                   class="input" placeholder="you@example.com">
+        </div>
+        <div>
             <label class="label" for="password">Password</label>
             {% include 'seller_app/partials/password_input.html' with id='password' name='password' minlength='8' autocomplete='new-password' placeholder='At least 8 characters' %}
         </div>

@@ -1,6 +1,7 @@
 {% extends 'seller_app/base.html' %}
 {% block title %}Edit product | Seller Ops{% endblock %}
 {% block header %}Edit product{% endblock %}
+{% block back_href %}{% url 'stock' %}{% endblock %}
 
 {% block content %}
 <form method="POST" action="{% url 'edit_product' product.pk %}" class="card p-4 space-y-4">

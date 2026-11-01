@@ -19,6 +19,7 @@
         <div>
             <label for="password" class="label">Password</label>
             {% include 'seller_app/partials/password_input.html' with id='password' name='password' autocomplete='current-password' placeholder='••••••••' %}
+            <a href="{% url 'password_reset' %}" class="inline-block text-xs font-bold text-brand-700 hover:underline mt-2">Forgot password?</a>
         </div>
         <button type="submit" class="btn">Sign in</button>
     </form>

@@ -2,6 +2,7 @@
 {% load humanize %}
 {% block title %}Invoice {{ inv.number }} | Seller Ops{% endblock %}
 {% block header %}Invoice{% endblock %}
+{% block back_href %}{% url 'sales' %}{% endblock %}
 
 {% block content %}
 <section class="card overflow-hidden">
