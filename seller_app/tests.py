@@ -5,16 +5,21 @@ Run locally with the SQLite database (leave DATABASE_URL unset so tests never to
 
     python manage.py test seller_app
 """
+import re
 from decimal import Decimal
 from io import BytesIO
+from unittest import mock
 
+from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
 from .invoice import build_invoice_data
-from .models import Customer, Product, Sale, SaleItem, Seller
+from .models import Customer, Product, ProfilePhoto, Sale, SaleItem, Seller
+from .photos import PhotoError, make_avatar_sizes
 
 PASSWORD = 'Str0ng!pass9'
 
@@ -339,3 +344,252 @@ class InvoiceTests(BaseCase):
         for name in ('invoice', 'invoice_pdf', 'invoice_jpg'):
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name, args=[walk_in.pk])).status_code, 200)
+
+
+def picture(size=(400, 300), mode='RGB', color='blue', fmt='PNG'):
+    buf = BytesIO()
+    Image.new(mode, size, color).save(buf, fmt)
+    return buf.getvalue()
+
+
+def upload(name='me.png', data=None, content_type='image/png'):
+    return SimpleUploadedFile(name, data if data is not None else picture(), content_type=content_type)
+
+
+class PhotoProcessingTests(TestCase):
+    def sizes_of(self, result):
+        return {name: Image.open(BytesIO(data)).size for name, data in result.items()}
+
+    def test_makes_three_square_jpeg_sizes_from_a_wide_photo(self):
+        result = make_avatar_sizes(BytesIO(picture((1600, 900), fmt='JPEG')))
+        self.assertEqual(self.sizes_of(result), {'small': (96, 96), 'medium': (256, 256), 'large': (640, 640)})
+        for data in result.values():
+            self.assertEqual(Image.open(BytesIO(data)).format, 'JPEG')
+
+    def test_small_picture_is_not_blown_up(self):
+        result = make_avatar_sizes(BytesIO(picture((120, 200))))
+        self.assertEqual(self.sizes_of(result), {'small': (96, 96), 'medium': (120, 120), 'large': (120, 120)})
+
+    def test_transparent_png_is_accepted(self):
+        result = make_avatar_sizes(BytesIO(picture((300, 300), mode='RGBA', color=(0, 0, 0, 0))))
+        self.assertEqual(self.sizes_of(result)['small'], (96, 96))
+
+    def test_rejects_things_that_are_not_pictures(self):
+        with self.assertRaises(PhotoError):
+            make_avatar_sizes(BytesIO(b'definitely not an image'))
+
+    def test_rejects_tiny_pictures(self):
+        with self.assertRaises(PhotoError):
+            make_avatar_sizes(BytesIO(picture((30, 30))))
+
+    def test_rejects_huge_files(self):
+        with self.assertRaises(PhotoError):
+            make_avatar_sizes(BytesIO(b'0' * (8 * 1024 * 1024 + 10)))
+
+
+class ProfileTests(BaseCase):
+    def test_profile_page_loads(self):
+        response = self.client.get(reverse('profile'))
+        self.assertContains(response, '08011111111')
+
+    def test_update_profile(self):
+        self.client.post(reverse('profile'), {'username': 'Joy', 'business_name': 'Joy Hub', 'email': 'joy@example.com'})
+        self.seller.refresh_from_db()
+        self.assertEqual((self.seller.username, self.seller.business_name, self.seller.email),
+                         ('Joy', 'Joy Hub', 'joy@example.com'))
+
+    def test_invalid_email_is_rejected(self):
+        self.client.post(reverse('profile'), {'username': 'Joy', 'business_name': '', 'email': 'not-an-email'})
+        self.seller.refresh_from_db()
+        self.assertEqual(self.seller.email, '')
+
+    def test_upload_stores_three_sizes_and_serves_them(self):
+        self.client.post(reverse('upload_photo'), {'photo': upload(data=picture((800, 600)))})
+        self.seller.refresh_from_db()
+        self.assertIsNotNone(self.seller.photo_updated)
+        self.assertEqual(ProfilePhoto.objects.filter(seller=self.seller).count(), 1)
+        for size, pixels in (('small', 96), ('medium', 256), ('large', 600)):
+            with self.subTest(size=size):
+                response = self.client.get(reverse('profile_photo', args=[size]))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response['Content-Type'], 'image/jpeg')
+                self.assertEqual(Image.open(BytesIO(response.content)).size, (pixels, pixels))
+
+    def test_uploading_again_replaces_the_photo(self):
+        self.client.post(reverse('upload_photo'), {'photo': upload()})
+        self.client.post(reverse('upload_photo'), {'photo': upload(data=picture((500, 500), color='red'))})
+        self.assertEqual(ProfilePhoto.objects.filter(seller=self.seller).count(), 1)
+
+    def test_non_image_upload_is_rejected(self):
+        self.client.post(reverse('upload_photo'), {'photo': upload('x.png', b'not a picture')})
+        self.assertFalse(ProfilePhoto.objects.exists())
+        self.seller.refresh_from_db()
+        self.assertIsNone(self.seller.photo_updated)
+
+    def test_missing_file_is_handled(self):
+        self.assertEqual(self.client.post(reverse('upload_photo')).status_code, 302)
+
+    def test_unknown_size_and_missing_photo_are_404(self):
+        self.assertEqual(self.client.get(reverse('profile_photo', args=['small'])).status_code, 404)
+        self.client.post(reverse('upload_photo'), {'photo': upload()})
+        self.assertEqual(self.client.get(reverse('profile_photo', args=['huge'])).status_code, 404)
+
+    def test_photos_are_private_to_their_owner(self):
+        self.client.post(reverse('upload_photo'), {'photo': upload()})
+        other = make_seller('08033333333')
+        self.client.logout()
+        self.client.force_login(other)
+        self.assertEqual(self.client.get(reverse('profile_photo', args=['small'])).status_code, 404)
+
+    def test_photo_requires_login(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse('profile_photo', args=['small'])).status_code, 302)
+
+    def test_remove_photo(self):
+        self.client.post(reverse('upload_photo'), {'photo': upload()})
+        self.client.post(reverse('remove_photo'))
+        self.assertFalse(ProfilePhoto.objects.exists())
+        self.seller.refresh_from_db()
+        self.assertIsNone(self.seller.photo_updated)
+
+    def test_header_avatar_appears_after_upload(self):
+        self.assertNotContains(self.client.get(reverse('dashboard')), 'profile/photo/small')
+        self.client.post(reverse('upload_photo'), {'photo': upload()})
+        self.assertContains(self.client.get(reverse('dashboard')), 'profile/photo/small')
+
+
+class BackButtonAndSplashTests(BaseCase):
+    def back_href(self, response):
+        match = re.search(r'<a href="([^"]*)"\s+aria-label="Go back"', response.content.decode())
+        return match.group(1) if match else None
+
+    def test_home_has_no_back_button(self):
+        self.assertIsNone(self.back_href(self.client.get(reverse('dashboard'))))
+
+    def test_inner_pages_go_back_to_home(self):
+        for name in ('stock', 'customers', 'debts', 'sales', 'add_sale', 'profile'):
+            with self.subTest(page=name):
+                self.assertEqual(self.back_href(self.client.get(reverse(name))), reverse('dashboard'))
+
+    def test_edit_product_goes_back_to_stock(self):
+        response = self.client.get(reverse('edit_product', args=[self.shirt.pk]))
+        self.assertEqual(self.back_href(response), reverse('stock'))
+
+    def test_invoice_goes_back_to_sales(self):
+        self.sell([(self.cap, 1)])
+        response = self.client.get(reverse('invoice', args=[Sale.objects.get().pk]))
+        self.assertEqual(self.back_href(response), reverse('sales'))
+
+    def test_signed_out_pages(self):
+        self.client.logout()
+        self.assertIsNone(self.back_href(self.client.get(reverse('login'))))
+        self.assertEqual(self.back_href(self.client.get(reverse('register'))), reverse('login'))
+        self.assertEqual(self.back_href(self.client.get(reverse('password_reset'))), reverse('login'))
+
+    def test_loading_animation_is_on_every_page(self):
+        self.assertContains(self.client.get(reverse('dashboard')), 'id="splash"')
+        self.client.logout()
+        self.assertContains(self.client.get(reverse('login')), 'id="splash"')
+
+
+class PasswordResetTests(TestCase):
+    NEW_PASSWORD = 'N3w!passw0rd'
+
+    def setUp(self):
+        self.seller = make_seller('08044444444')
+        self.seller.email = 'Ada@Example.com'
+        self.seller.username = 'Ada'
+        self.seller.save()
+
+    def request_reset(self, identifier):
+        return self.client.post(reverse('password_reset'), {'email': identifier})
+
+    def link_from_email(self):
+        return re.search(r'/reset/[\w-]+/[\w-]+/', mail.outbox[0].body).group(0)
+
+    def test_login_page_links_to_reset(self):
+        self.assertContains(self.client.get(reverse('login')), 'Forgot password?')
+
+    def test_reset_by_phone_number_emails_the_address_on_file(self):
+        response = self.request_reset('08044444444')
+        self.assertRedirects(response, reverse('password_reset_done'))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['Ada@Example.com'])
+        self.assertEqual(mail.outbox[0].subject, 'Reset your Seller Ops password')
+        self.assertIn('/reset/', mail.outbox[0].body)
+
+    def test_phone_formats_are_normalised(self):
+        self.request_reset('+234 804 444 4444')
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_reset_by_email_ignores_case(self):
+        self.request_reset('ada@example.COM')
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_unknown_account_sends_nothing_but_looks_the_same(self):
+        response = self.request_reset('08099999999')
+        self.assertRedirects(response, reverse('password_reset_done'))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_account_without_email_gets_nothing(self):
+        make_seller('08055555555')
+        response = self.request_reset('08055555555')
+        self.assertRedirects(response, reverse('password_reset_done'))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_full_reset_flow(self):
+        self.request_reset('08044444444')
+        page = self.client.get(self.link_from_email(), follow=True)
+        self.assertContains(page, 'Choose a new password')
+        set_url = page.redirect_chain[-1][0]
+        response = self.client.post(set_url, {'new_password1': self.NEW_PASSWORD, 'new_password2': self.NEW_PASSWORD})
+        self.assertRedirects(response, reverse('password_reset_complete'))
+        self.client.logout()
+        self.assertTrue(self.client.login(username='08044444444', password=self.NEW_PASSWORD))
+        self.client.logout()
+        self.assertFalse(self.client.login(username='08044444444', password=PASSWORD))
+
+    def test_mismatched_new_passwords_are_rejected(self):
+        self.request_reset('08044444444')
+        page = self.client.get(self.link_from_email(), follow=True)
+        response = self.client.post(page.redirect_chain[-1][0],
+                                    {'new_password1': self.NEW_PASSWORD, 'new_password2': 'Different!pass1'})
+        self.assertEqual(response.status_code, 200)
+        self.client.logout()
+        self.assertTrue(self.client.login(username='08044444444', password=PASSWORD))
+
+    def test_link_works_only_once(self):
+        self.request_reset('08044444444')
+        link = self.link_from_email()
+        page = self.client.get(link, follow=True)
+        self.client.post(page.redirect_chain[-1][0],
+                         {'new_password1': self.NEW_PASSWORD, 'new_password2': self.NEW_PASSWORD})
+        self.assertContains(self.client.get(link), 'This link has expired')
+
+    def test_garbage_link_shows_expired_page(self):
+        self.assertContains(self.client.get('/reset/abc/def-123/'), 'This link has expired')
+
+    def test_mail_server_failure_does_not_crash(self):
+        with mock.patch('django.core.mail.message.EmailMultiAlternatives.send', side_effect=OSError('smtp down')):
+            response = self.request_reset('08044444444')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'could not send')
+
+
+class RegistrationEmailTests(TestCase):
+    def register(self, email):
+        return self.client.post(reverse('register'), {
+            'username': 'Joy', 'business_name': '', 'phone_number': '08022222222', 'email': email,
+            'password': PASSWORD, 'confirm_password': PASSWORD})
+
+    def test_email_is_saved_when_given(self):
+        self.register('joy@example.com')
+        self.assertEqual(Seller.objects.get().email, 'joy@example.com')
+
+    def test_email_is_optional(self):
+        self.register('')
+        self.assertEqual(Seller.objects.get().email, '')
+
+    def test_invalid_email_is_rejected(self):
+        self.register('nope')
+        self.assertFalse(Seller.objects.exists())

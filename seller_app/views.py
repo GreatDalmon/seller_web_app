@@ -1,23 +1,30 @@
+import logging
 import re
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
+from django import forms
 from django.contrib import messages
+from django.contrib.auth import views as auth_views
+from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .invoice import build_invoice_data, file_name, render_jpg, render_pdf
-from .models import Customer, Product, Sale, SaleItem, Seller
+from .models import Customer, Product, ProfilePhoto, Sale, SaleItem, Seller
+from .photos import SIZES, PhotoError, make_avatar_sizes
 
 ZERO = Decimal('0')
 MAX_MONEY = Decimal('99999999.99')
@@ -32,6 +39,14 @@ def normalize_phone(raw):
     elif phone.startswith('234') and len(phone) == 13:
         phone = '0' + phone[3:]
     return phone
+
+
+def is_valid_email(value):
+    try:
+        validate_email(value)
+        return True
+    except ValidationError:
+        return False
 
 
 def valid_phone(phone):
@@ -91,6 +106,7 @@ def register_view(request):
             'username': request.POST.get('username', '').strip(),
             'business_name': request.POST.get('business_name', '').strip(),
             'phone_number': normalize_phone(request.POST.get('phone_number')),
+            'email': request.POST.get('email', '').strip(),
         }
         password = request.POST.get('password', '')
         confirm = request.POST.get('confirm_password', '')
@@ -103,6 +119,8 @@ def register_view(request):
             error = 'Enter a valid 11-digit Nigerian phone number, e.g. 08012345678.'
         elif Seller.objects.filter(phone_number=phone).exists():
             error = 'This phone number is already registered.'
+        elif form['email'] and not is_valid_email(form['email']):
+            error = 'Enter a valid email address, or leave it blank.'
         elif password != confirm:
             error = 'Passwords do not match. Please re-enter them.'
         else:
@@ -117,6 +135,7 @@ def register_view(request):
             user = Seller.objects.create_user(phone_number=phone, password=password)
             user.username = form['username'][:50]
             user.business_name = form['business_name'][:100]
+            user.email = form['email'][:254]
             user.save()
             login(request, user)
             return redirect('dashboard')
@@ -498,3 +517,121 @@ def record_payment(request, pk):
     else:
         messages.success(request, f'₦{applied_total:,.2f} payment recorded for {customer.name}.')
     return redirect('debts')
+
+
+# ---------- profile & photo ----------
+@login_required
+def profile(request):
+    user = request.user
+    form = {'username': user.username, 'business_name': user.business_name, 'email': user.email}
+
+    if request.method == 'POST':
+        form = {
+            'username': request.POST.get('username', '').strip()[:50],
+            'business_name': request.POST.get('business_name', '').strip()[:100],
+            'email': request.POST.get('email', '').strip()[:254],
+        }
+        if not form['username']:
+            messages.error(request, 'Please enter your name.')
+        elif form['email'] and not is_valid_email(form['email']):
+            messages.error(request, 'Enter a valid email address, or leave it blank.')
+        else:
+            user.username = form['username']
+            user.business_name = form['business_name']
+            user.email = form['email']
+            user.save(update_fields=['username', 'business_name', 'email'])
+            messages.success(request, 'Profile saved.')
+            return redirect('profile')
+
+    return render(request, 'seller_app/profile.html', {'form': form})
+
+
+@login_required
+@require_POST
+def upload_photo(request):
+    uploaded = request.FILES.get('photo')
+    if not uploaded:
+        messages.error(request, 'Choose a photo first.')
+        return redirect('profile')
+    try:
+        sizes = make_avatar_sizes(uploaded)
+    except PhotoError as exc:
+        messages.error(request, str(exc))
+        return redirect('profile')
+
+    with transaction.atomic():
+        ProfilePhoto.objects.update_or_create(seller=request.user, defaults=sizes)
+        request.user.photo_updated = timezone.now()
+        request.user.save(update_fields=['photo_updated'])
+    messages.success(request, 'Profile photo updated.')
+    return redirect('profile')
+
+
+@login_required
+@require_POST
+def remove_photo(request):
+    with transaction.atomic():
+        ProfilePhoto.objects.filter(seller=request.user).delete()
+        request.user.photo_updated = None
+        request.user.save(update_fields=['photo_updated'])
+    messages.success(request, 'Profile photo removed.')
+    return redirect('profile')
+
+
+@login_required
+def profile_photo(request, size):
+    """Serve the signed-in seller's own photo (small, medium or large)."""
+    if size not in SIZES:
+        raise Http404
+    photo = ProfilePhoto.objects.filter(seller=request.user).first()
+    if photo is None:
+        raise Http404
+    response = HttpResponse(bytes(getattr(photo, size)), content_type='image/jpeg')
+    response['Cache-Control'] = 'private, max-age=604800'  # the page URL carries ?v=<timestamp>, so changes show at once
+    return response
+
+
+# ---------- password reset (by email) ----------
+logger = logging.getLogger(__name__)
+
+
+class ResetRequestForm(PasswordResetForm):
+    """Ask for the phone number (their login) or the email, and mail a reset link to the email on file."""
+    email = forms.CharField(label='Phone number or email', max_length=254)
+
+    def get_users(self, identifier):
+        identifier = (identifier or '').strip()
+        if '@' in identifier:
+            matches = Seller.objects.filter(email__iexact=identifier)
+        else:
+            matches = Seller.objects.filter(phone_number=normalize_phone(identifier))
+        return (u for u in matches.exclude(email='') if u.is_active and u.has_usable_password())
+
+
+class SellerPasswordResetView(auth_views.PasswordResetView):
+    form_class = ResetRequestForm
+    template_name = 'seller_app/password_reset.html'
+    email_template_name = 'seller_app/password_reset_email.txt'
+    subject_template_name = 'seller_app/password_reset_subject.txt'
+    success_url = reverse_lazy('password_reset_done')
+
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except Exception:  # mail server down, bad credentials, timeout...
+            logger.exception('Could not send password reset email')
+            messages.error(self.request, 'We could not send the email right now. Please try again in a few minutes.')
+            return self.form_invalid(form)
+
+
+class SellerPasswordResetDoneView(auth_views.PasswordResetDoneView):
+    template_name = 'seller_app/password_reset_done.html'
+
+
+class SellerPasswordResetConfirmView(auth_views.PasswordResetConfirmView):
+    template_name = 'seller_app/password_reset_confirm.html'
+    success_url = reverse_lazy('password_reset_complete')
+
+
+class SellerPasswordResetCompleteView(auth_views.PasswordResetCompleteView):
+    template_name = 'seller_app/password_reset_complete.html'

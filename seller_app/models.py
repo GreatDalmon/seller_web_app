@@ -24,12 +24,15 @@ class Seller(AbstractBaseUser):
     phone_number = models.CharField(max_length=15, unique=True)
     username = models.CharField(max_length=50, blank=True)
     business_name = models.CharField(max_length=100, blank=True)
+    email = models.EmailField(blank=True)  # used for password recovery
+    photo_updated = models.DateTimeField(null=True, blank=True)  # set when a profile photo exists
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
 
     objects = SellerManager()
 
     USERNAME_FIELD = 'phone_number'
+    EMAIL_FIELD = 'email'
 
     def __str__(self):
         return self.username or self.phone_number
@@ -44,6 +47,21 @@ class Seller(AbstractBaseUser):
 
     def has_module_perms(self, app_label):
         return True
+
+class ProfilePhoto(models.Model):
+    """A seller's profile picture, stored in the database in three sizes.
+
+    Vercel has no permanent disk, so uploaded images live here (a few KB each) instead of in files.
+    """
+    seller = models.OneToOneField(Seller, on_delete=models.CASCADE, related_name='photo')
+    small = models.BinaryField()    # avatar in the header
+    medium = models.BinaryField()   # profile page
+    large = models.BinaryField()    # full-size view
+    updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'Photo of {self.seller}'
+
 
 # ==========================================
 # 2. PRODUCTS & STOCK
