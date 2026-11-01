@@ -153,3 +153,20 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 WHITENOISE_USE_FINDERS = True  # serve app/admin static files directly, no collectstatic step
 
+
+# Email (password reset links)
+# Set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD (plus EMAIL_HOST for a non-Gmail provider) in the
+# environment to send real emails. Without them, emails are only printed to the server log.
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_BACKEND = (
+    'django.core.mail.backends.smtp.EmailBackend' if EMAIL_HOST_USER
+    else 'django.core.mail.backends.console.EmailBackend'
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = True
+EMAIL_TIMEOUT = 10
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or EMAIL_HOST_USER or 'Seller Ops <noreply@localhost>'
+
+PASSWORD_RESET_TIMEOUT = 60 * 60  # reset links stop working after 1 hour
